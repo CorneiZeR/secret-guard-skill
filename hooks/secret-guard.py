@@ -78,9 +78,39 @@ class Deny(Exception):
     pass
 
 
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+
+def drop_heredoc_bodies(cmd):
+    """A here-document's body is data for its command, not commands — unless a shell reads it."""
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        match = HEREDOC.search(line)
+        if not match:
+            continue
+        word = match.group(2)
+        body = []
+        while i < len(lines) and lines[i].strip() != word:
+            body.append(lines[i])
+            i += 1
+        i += 1  # the closing word
+        readers = {os.path.basename(w) for w in line[: match.start()].split()}
+        if readers & SH_SHELLS:
+            out.extend(body)  # `sh <<EOF` runs its body: commands, checked as such
+        elif readers & SHELLS:
+            # `python3 - <<EOF`: code, kept on its command's line so a secret path
+            # in it is still a secret path read by that interpreter
+            out[-1] = line + " " + shlex.quote(" ".join(body))
+    return "\n".join(out)
+
+
 def words_of(cmd):
-    cmd = cmd.replace("\\\n", " ")  # a continued line is one command, not two
-    lex = shlex.shlex(cmd, posix=True, punctuation_chars=";&|<>()`")
+    cmd = drop_heredoc_bodies(cmd.replace("\\\n", " "))  # a continued line is one command, not two
+    lex = shlex.shlex(cmd, posix=True, punctuation_chars=";&|<>()`\n")
+    lex.whitespace = " \t\r"  # a newline outside quotes separates commands, like `;`
     lex.whitespace_split = True
     lex.commenters = ""
     try:
@@ -187,7 +217,8 @@ def drop_pattern(verb, stage):
 
 
 # `-c` runs its argument only after one of these: `jq -c` is compact output.
-SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "su", "python", "python3", "perl", "ruby", "node"}
+SH_SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "su"}
+SHELLS = SH_SHELLS | {"python", "python3", "perl", "ruby", "node"}
 
 SUBST = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 
