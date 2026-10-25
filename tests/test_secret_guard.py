@@ -63,7 +63,7 @@ class BashDenied(unittest.TestCase):
             "echo `cat .env`",
             'cat "my dir/.env"',
             "T=$(cat .env)",
-            "sed -n p \\\n  .env", "sed -e 's/a/b/' .env", "awk -F= '{print $2}' -v x=1 .env",
+            "sed -n p \\\n  .env", "jq . terraform.tfstate", "jq --rawfile t secrets/tok -n '$t'", "sed -e 's/a/b/' .env", "awk -F= '{print $2}' -v x=1 .env",
             "grep -n KEY envs/", "grep -e x -e y .env", "rg TOKEN ci-envs/a.env",
             'printf "%s" "$(cat secrets/tok)"',
             'curl -s "https://x/$(cat secrets/tok | tee /dev/stderr)"',
@@ -122,6 +122,8 @@ class BashAllowed(unittest.TestCase):
             "K=~/ansible/203.0.113.20/admin; ssh -i $K -p 2222 admin@203.0.113.20 'sudo ls /srv'",
             'curl -s -H "Authorization: Bearer $(cat secrets/cloudflare-dns-token)" https://api.cloudflare.com/x',
             "ssh -p 2222 h 'sudo sh -c \"curl -H \\\"Authorization: Bearer $(cat /t/secrets/tok)\\\" https://x\"'",
+            "curl -s https://x/openapi.json | jq -c '.schemas | to_entries[] | {k:.key, p:.value}'",
+            "jq --arg k .key -r '.[$k]' data.json",
         ):
             with self.subTest(cmd=cmd):
                 self.assertFalse(denied(cmd), cmd)

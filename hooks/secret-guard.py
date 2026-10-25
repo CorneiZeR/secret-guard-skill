@@ -148,7 +148,10 @@ def mentions_secret(stage):
 PATTERN_FLAGS = {  # flags whose argument is a pattern or a program, not a file
     "grep": {"-e", "--regexp"}, "egrep": {"-e"}, "fgrep": {"-e"}, "rg": {"-e", "--regexp"},
     "sed": {"-e", "--expression"}, "awk": {"-v", "-F"}, "gawk": {"-v", "-F"},
+    "jq": {"--indent"},
 }
+# jq's two-argument flags: `--arg name value` names no file, `--rawfile name f` reads f.
+JQ_PAIRS = {"--arg": False, "--argjson": False, "--slurpfile": True, "--rawfile": True}
 
 
 def drop_pattern(verb, stage):
@@ -161,6 +164,11 @@ def drop_pattern(verb, stage):
         w = rest[i]
         if not w:  # `sed -i ''`: the empty backup suffix
             i += 1
+            continue
+        if verb == "jq" and w in JQ_PAIRS and i + 2 < len(rest):
+            if JQ_PAIRS[w]:
+                out.append(rest[i + 2])
+            i += 3
             continue
         if w in PATTERN_FLAGS[verb] | {"-f", "--file"} and i + 1 < len(rest):
             have_pattern = have_pattern or w in ("-e", "--regexp", "--expression")
@@ -177,6 +185,9 @@ def drop_pattern(verb, stage):
         i += 1
     return stage[:start + 1] + out
 
+
+# `-c` runs its argument only after one of these: `jq -c` is compact output.
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "su", "python", "python3", "perl", "ruby", "node"}
 
 SUBST = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 
@@ -279,7 +290,8 @@ def analyze(cmd, piped_to_keys=False, depth=0):
                     analyze(" ".join(remote), to_keys, depth + 1)
             for j, w in enumerate(stage):  # sh -c '...', eval '...', "$(...)"
                 prev = os.path.basename(stage[j - 1]) if j else ""
-                if (prev == "-c" or prev in ("eval", "watch")) and (" " in w or "\n" in w):
+                shell_c = prev == "-c" and any(os.path.basename(x) in SHELLS for x in stage[:j - 1])
+                if (shell_c or prev in ("eval", "watch")) and (" " in w or "\n" in w):
                     analyze(w, to_keys, depth + 1)
                 for m in SUBST.finditer(w):
                     # `curl -H "Bearer $(cat f)"` hands the value to a process; echo would show it
