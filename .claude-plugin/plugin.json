@@ -1,0 +1,17 @@
+{
+  "name": "secret-guard",
+  "version": "1.0.0",
+  "description": "Keeps secret values out of the transcript: refuses reading secret files and printing secret variables before the command runs, and shows what a secret file holds by name, length and a keyed fingerprint instead. Warns after the fact when a known token shape got through anyway.",
+  "author": {
+    "name": "Oleksii Kolosiuk"
+  },
+  "homepage": "https://github.com/CorneiZeR/secret-guard-skill",
+  "license": "MIT",
+  "keywords": [
+    "secrets",
+    "security",
+    "hooks",
+    "dotenv",
+    "credentials"
+  ]
+}

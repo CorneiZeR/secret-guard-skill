@@ -1,0 +1,30 @@
+{
+  "description": "Refuses a Bash, Read or Grep call that would put a secret value into the transcript; warns when one got through.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/secret-guard.py\"",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Read|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/secret-guard.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
