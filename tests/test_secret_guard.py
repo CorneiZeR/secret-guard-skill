@@ -66,6 +66,10 @@ class BashDenied(unittest.TestCase):
             "true\ncat .env", "ls\nhead -1 secrets/tok\necho done",
             "sh <<'EOF'\ncat .env\nEOF", "bash -s <<EOF\nprintenv\nEOF",
             "python3 - <<'EOF'\nprint(open('.env').read())\nEOF",
+            # Perl and ruby run backticks: the command inside is still one.
+            "perl - <<'EOF'\nprint `cat .env`;\nEOF",
+            # A value substituted into an interpreter's code can be printed by it.
+            "python3 -c \"print('$(cat .env)')\"",
             "sed -n p \\\n  .env", "jq . terraform.tfstate", "jq --rawfile t secrets/tok -n '$t'", "sed -e 's/a/b/' .env", "awk -F= '{print $2}' -v x=1 .env",
             "grep -n KEY envs/", "grep -e x -e y .env", "rg TOKEN ci-envs/a.env",
             'printf "%s" "$(cat secrets/tok)"',
@@ -84,6 +88,7 @@ class BashDenied(unittest.TestCase):
             "curl -s https://git.example.com/api/v4/projects/10/variables | jq '.[].key'",
             "terraform output -raw admin_password", "terraform state pull",
             "docker inspect web", "docker inspect -f '{{.Config.Env}}' web",
+            "docker container inspect web", "docker image inspect app:1",
             "docker compose config", "docker compose -f a.yml config",
             "ansible-vault view vault.yml", "security find-generic-password -s x -w",
             "bw get password db",
@@ -110,6 +115,9 @@ class BashAllowed(unittest.TestCase):
             "env FOO=1 python3 x.py", "/usr/bin/env python3 -V",
             "docker compose config --hash back", "docker compose config --services",
             "docker inspect -f '{{.State.Health.Status}}' web",
+            "docker manifest inspect alpine:3.20", "docker manifest inspect --verbose registry.example/app:1",
+            "docker buildx imagetools inspect alpine:3.20", "docker network inspect proxy",
+            "docker volume inspect data",
             "terraform output", "terraform plan", "just vault-push",
             "ssh host 'ls -la /srv/traefik/secrets'",
             "sudo -u deploy sh -c 'cd /srv/app && docker compose ps'",
@@ -121,6 +129,10 @@ class BashAllowed(unittest.TestCase):
             "K=~/ansible/203.0.113.20/admin\nssh -i $K -p 2222 admin@203.0.113.20 true",
             "cat > notes.txt <<'EOF'\nthe .env file and secrets/ dir are gitignored\nEOF",
             "git commit -F - <<'EOF'\ndocs: where secrets/ and .env live\nEOF",
+            # In python a backtick is text: a README line that names a refused
+            # command, edited by a script, is not that command being run.
+            "python3 - <<'EOF'\ns = 'refuses `terraform output -raw` and $(terraform state pull)'\nEOF",
+            "node - <<'EOF'\nconst s = `docker inspect web`;\nEOF",
             "echo 'one\ntwo .env'",
             "sed -i '' \\\n  -e 's#~/.ssh/id_rsa#~/.ssh/id_work#g' \\\n  -e 's#secrets/#vault/#' notes.md",
             "sed 's#.env#.env.example#' README.md", "ls \\\n  -la",

@@ -22,14 +22,23 @@ Before a Bash, Read or Grep call runs:
 - **printing a value** — bare `env`, `printenv`, `set`, `export -p`;
   `echo $SOME_TOKEN`; `gh auth token`, `glab auth status -t`;
   `terraform output -raw|-json`, `terraform state pull`; `docker inspect`
-  without `--format`, `docker compose config`; `ansible-vault view`,
+  (a container or an image) without `--format` — a manifest, network or
+  volume holds no environment and passes — `docker compose config`;
+  `ansible-vault view`,
   `security … -w`, `bw get`, `op read`; GitLab's CI/CD variables API;
 - **xtrace next to a secret file** — `set -x` or `sh -x` would print every
   value the file loads.
 
 A value handed to another process is not printed and passes:
 `curl -H "Authorization: Bearer $TOKEN"`, `echo "$T" | docker login
---password-stdin`, `curl -H "Bearer $(cat token)"`.
+--password-stdin`, `curl -H "Bearer $(cat token)"`. An interpreter is not
+such a process: a value substituted into python or perl code can be printed
+by it, and is refused.
+
+A here-document is data for its command, not commands — unless a shell reads
+it (`sh <<EOF`). Fed to python or node it is their code: a secret path in it
+is still a read, while a backtick or `$(` in it is text, since neither runs a
+command there. Perl and ruby run backticks, and keep them.
 
 The refusal tells the assistant what to use instead. If the value itself is
 needed, the person runs the command with `!` in the prompt.

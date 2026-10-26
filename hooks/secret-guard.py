@@ -59,6 +59,11 @@ ARG_FLAGS = {
 }
 PRINTERS = {"echo", "printf", "print", "logger", "tee", "cat"}
 GIT_SAFE = {"status", "check-ignore", "ls-files", "add", "rm", "mv", "restore", "stash", "commit"}
+# `docker <object> inspect` for objects that hold no environment: a registry's
+# manifest list, a network, a volume. `docker inspect`, `container inspect` and
+# `image inspect` stay refused — a container's and an image's Env is there.
+DOCKER_INSPECT_SAFE = {"manifest", "network", "volume", "buildx"}
+
 COMPOSE_CONFIG_SAFE = {"--hash", "--services", "--volumes", "--images", "-q", "--quiet",
                        "--profiles", "--networks", "--environment"}
 
@@ -102,8 +107,14 @@ def drop_heredoc_bodies(cmd):
             out.extend(body)  # `sh <<EOF` runs its body: commands, checked as such
         elif readers & SHELLS:
             # `python3 - <<EOF`: code, kept on its command's line so a secret path
-            # in it is still a secret path read by that interpreter
-            out[-1] = line + " " + shlex.quote(" ".join(body))
+            # in it is still a secret path read by that interpreter. In python
+            # and node a backtick or `$(` is text, not a command — a string that
+            # merely mentions one is not running it — so neither is read as a
+            # substitution there. Perl and ruby run backticks, and keep them.
+            text = " ".join(body)
+            if readers & NO_SUBST:
+                text = text.replace("`", "'").replace("$(", "( ")
+            out[-1] = line + " " + shlex.quote(text)
     return "\n".join(out)
 
 
@@ -219,6 +230,8 @@ def drop_pattern(verb, stage):
 # `-c` runs its argument only after one of these: `jq -c` is compact output.
 SH_SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "su"}
 SHELLS = SH_SHELLS | {"python", "python3", "perl", "ruby", "node"}
+# Interpreters for which a backtick or `$(...)` in the code is not a command.
+NO_SUBST = {"python", "python3", "node"}
 
 SUBST = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 
@@ -265,7 +278,9 @@ def check_tools(verb, args, piped_to_keys):
         if re.search(r"\boutput\b.*(-raw|-json)|\bstate\s+pull\b|\bshow\b.*-json|\bconsole\b", a):
             raise Deny(f"`{verb}` would print sensitive values or the whole state")
     if verb == "docker" or verb == "docker-compose":
-        if re.search(r"\binspect\b", a) and not re.search(r"(-f|--format)[ =]", a):
+        sub = next((w for w in args if not w.startswith("-")), "")
+        if (re.search(r"\binspect\b", a) and not re.search(r"(-f|--format)[ =]", a)
+                and sub not in DOCKER_INSPECT_SAFE):
             raise Deny("`docker inspect` prints the container's environment; use --format")
         if re.search(r"(-f|--format)[ =]\S*Env", a):
             raise Deny("that --format prints the container's environment")
@@ -325,8 +340,12 @@ def analyze(cmd, piped_to_keys=False, depth=0):
                 if (shell_c or prev in ("eval", "watch")) and (" " in w or "\n" in w):
                     analyze(w, to_keys, depth + 1)
                 for m in SUBST.finditer(w):
-                    # `curl -H "Bearer $(cat f)"` hands the value to a process; echo would show it
-                    analyze(m.group(1) or m.group(2) or "", bool(verb) and verb not in PRINTERS, depth + 1)
+                    # `curl -H "Bearer $(cat f)"` hands the value to a process; echo would
+                    # show it, and so would python or perl, whose code can print it. A
+                    # shell's `-c` is checked as commands of its own, above.
+                    interpreter = os.path.basename(verb) in SHELLS - SH_SHELLS
+                    hands_off = bool(verb) and verb not in PRINTERS and not interpreter
+                    analyze(m.group(1) or m.group(2) or "", hands_off, depth + 1)
             check_env_dump(verb, args, stage, feeds_process)
             check_tools(verb, args, to_keys)
             word = mentions_secret(drop_pattern(verb, stage))
